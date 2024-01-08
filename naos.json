@@ -1,11 +1,10 @@
 {
-  "version": "master",
+  "version": "v0.11.1",
+  "target": "esp32",
   "components": {
     "art32": {
       "repository": "https://github.com/256dpi/art32.git",
-      "version": "master"
+      "version": "9b64980"
     }
-  },
-  "broker": "mqtts://key:secret@broker.shiftr.io",
-  "devices": {}
+  }
 }

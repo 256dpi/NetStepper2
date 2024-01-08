@@ -1,6 +1,6 @@
 #include <driver/gpio.h>
 #include <driver/spi_master.h>
-#include <naos.h>
+#include <naos/sys.h>
 
 #include "l6470.h"
 

@@ -1,9 +1,13 @@
 #include <art32/numbers.h>
 #include <art32/smooth.h>
-#include <art32/strconv.h>
+#include <art32/convert.h>
 #include <driver/adc.h>
 #include <driver/gpio.h>
 #include <naos.h>
+#include <naos/ble.h>
+#include <naos/wifi.h>
+#include <naos/mqtt.h>
+#include <naos/sys.h>
 #include <string.h>
 
 #include "buttons.h"
@@ -78,9 +82,9 @@ static void online() {
   naos_subscribe("home", 0, NAOS_LOCAL);
 }
 
-static void update(const char *param, const char *value) {
+static void update(naos_param_t *param) {
   // handle "micro-steps"
-  if (strcmp(param, "micro-steps") == 0) {
+  if (strcmp(param->name, "micro-steps") == 0) {
     // make motor stop (remove power)
     l6470_hard_hiz();
 
@@ -95,7 +99,7 @@ static void update(const char *param, const char *value) {
   }
 
   // handle "max-speed"
-  if (strcmp(param, "max-speed") == 0) {
+  if (strcmp(param->name, "max-speed") == 0) {
     // constrain value
     max_speed = naos_get_d("max-speed");
 
@@ -110,7 +114,7 @@ static void update(const char *param, const char *value) {
   }
 
   // handle "acceleration"
-  if (strcmp(param, "acceleration") == 0) {
+  if (strcmp(param->name, "acceleration") == 0) {
     // constrain value
     acceleration = naos_get_d("acceleration");
 
@@ -122,7 +126,7 @@ static void update(const char *param, const char *value) {
   }
 
   // handle "deceleration"
-  if (strcmp(param, "deceleration") == 0) {
+  if (strcmp(param->name, "deceleration") == 0) {
     // constrain value
     deceleration = naos_get_d("deceleration");
 
@@ -134,7 +138,7 @@ static void update(const char *param, const char *value) {
   }
 }
 
-static void message(const char *topic, uint8_t *payload, size_t len, naos_scope_t scope) {
+static void message(const char *topic, const uint8_t *payload, size_t len, naos_scope_t scope) {
   // immediately return if blocked
   if (blocked) {
     return;
@@ -364,7 +368,7 @@ static naos_param_t params[] = {
 
 static naos_config_t config = {
     .device_type = "NetStepper2",
-    .firmware_version = "0.5.0",
+    .device_version = "0.5.0",
     .parameters = params,
     .num_parameters = 11,
     .ping_callback = ping,
@@ -405,6 +409,10 @@ void app_main() {
 
   // initialize naos
   naos_init(&config);
+  naos_ble_init((naos_ble_config_t){});
+  naos_wifi_init();
+  naos_mqtt_init(1);
+  naos_start();
 
   // set step mode
   micro_steps = l6470_set_step_mode_int(naos_get_l("micro-steps"));
