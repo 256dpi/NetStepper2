@@ -15,7 +15,10 @@ typedef union {
     uint8_t busy : 1;
     uint8_t _1 : 2;
     l6470_direction_t direction : 1;
-    uint16_t _2 : 11;
+    uint16_t _2 : 8;
+    uint8_t stall_a : 1;
+    uint8_t stall_b : 1;
+    uint8_t _3 : 1;
   };
 } l6470_status_t;
 
@@ -103,6 +106,10 @@ void l6470_set_step_mode(l6470_step_mode_t mode);
 int l6470_set_step_mode_int(int mode);
 
 l6470_step_mode_t l6470_get_step_mode();
+
+void l6470_set_stall_threshold(float current);
+
+float l6470_get_stall_threshold();
 
 l6470_status_t l6470_get_status();
 

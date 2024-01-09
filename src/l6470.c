@@ -27,6 +27,7 @@
 #define L6470_REG_DECELERATION 0x06
 #define L6470_REG_MAXIMUM_SPEED 0x07
 #define L6470_REG_MINIMUM_SPEED 0x08
+#define L6470_REG_STALL_THRESHOLD 0x14
 #define L6470_REG_FULL_STEP_SPEED 0x15
 #define L6470_REG_STEP_MODE 0x16
 #define L6470_REG_STATUS 0x19
@@ -128,6 +129,8 @@ static uint32_t l6470_handle_param(uint8_t param, uint32_t value) {
       return l6470_transfer(value, 10);
     case L6470_REG_MINIMUM_SPEED:
       return l6470_transfer(value, 13);
+    case L6470_REG_STALL_THRESHOLD:
+      return l6470_transfer(value, 7);
     case L6470_REG_FULL_STEP_SPEED:
       return l6470_transfer(value, 10);
     case L6470_REG_STEP_MODE:
@@ -135,7 +138,7 @@ static uint32_t l6470_handle_param(uint8_t param, uint32_t value) {
     case L6470_REG_STATUS:
       return l6470_transfer(0, 16);
     default:
-      return 0;
+      ESP_ERROR_CHECK(ESP_FAIL);
   }
 }
 
@@ -430,6 +433,21 @@ int l6470_set_step_mode_int(int mode) {
 l6470_step_mode_t l6470_get_step_mode() {
   // set parameter
   return (l6470_step_mode_t)(l6470_get_param(L6470_REG_STEP_MODE) & 0x07);
+}
+
+void l6470_set_stall_threshold(float current) {
+  // range is 31.25mA to 4000mA (0-127)
+
+  // calculate internal value
+  uint8_t value = (uint8_t)((current - 31.25f) / 31.25f);
+
+  // update register
+  l6470_set_param(L6470_REG_STALL_THRESHOLD, value);
+}
+
+float l6470_get_stall_threshold() {
+  // read parameter
+  return (float)l6470_get_param(L6470_REG_STALL_THRESHOLD) * 31.25f;
 }
 
 l6470_status_t l6470_get_status() {
