@@ -178,6 +178,17 @@ static uint32_t l6470_get_param(uint8_t param) {
   return result;
 }
 
+static void l6470_send_command(uint8_t cmd) {
+  // acquire lock
+  naos_lock(l6470_mutex);
+
+  // send command
+  l6470_transmit(cmd);
+
+  // release lock
+  naos_unlock(l6470_mutex);
+}
+
 /* COMMANDS */
 
 void l6470_run(l6470_direction_t dir, uint32_t steps_per_tick) {
@@ -282,42 +293,42 @@ void l6470_go_to_direction(int32_t pos, l6470_direction_t dir) {
 
 void l6470_go_home() {
   // send command
-  l6470_transmit(L6470_CMD_GO_HOME);
+  l6470_send_command(L6470_CMD_GO_HOME);
 }
 
 void l6470_go_mark() {
   // send command
-  l6470_transmit(L6470_CMD_GO_MARK);
+  l6470_send_command(L6470_CMD_GO_MARK);
 }
 
 void l6470_reset_position() {
   // send command
-  l6470_transmit(L6470_CMD_RESET_POSITION);
+  l6470_send_command(L6470_CMD_RESET_POSITION);
 }
 
 void l6470_reset_device() {
   // send command
-  l6470_transmit(L6470_CMD_RESET_DEVICE);
+  l6470_send_command(L6470_CMD_RESET_DEVICE);
 }
 
 void l6470_soft_stop() {
   // send command
-  l6470_transmit(L6470_CMD_SOFT_STOP);
+  l6470_send_command(L6470_CMD_SOFT_STOP);
 }
 
 void l6470_hard_stop() {
   // send command
-  l6470_transmit(L6470_CMD_HARD_STOP);
+  l6470_send_command(L6470_CMD_HARD_STOP);
 }
 
 void l6470_soft_hiz() {
   // send command
-  l6470_transmit(L6470_CMD_SOFT_HIZ);
+  l6470_send_command(L6470_CMD_SOFT_HIZ);
 }
 
 void l6470_hard_hiz() {
   // send command
-  l6470_transmit(L6470_CMD_HARD_HIZ);
+  l6470_send_command(L6470_CMD_HARD_HIZ);
 }
 
 l6470_status_t l6470_get_status_and_clear() {
