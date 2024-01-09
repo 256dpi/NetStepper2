@@ -88,11 +88,8 @@ static void update(naos_param_t *param) {
     // make motor stop (remove power)
     l6470_hard_hiz();
 
-    // set setting
+    // update value
     micro_steps = l6470_set_step_mode_int(naos_get_l("micro-steps"));
-
-    // set corrected value
-    naos_set_l("micro-steps", micro_steps);
 
     // reset position
     l6470_reset_position();
@@ -100,11 +97,8 @@ static void update(naos_param_t *param) {
 
   // handle "max-speed"
   if (strcmp(param->name, "max-speed") == 0) {
-    // constrain value
+    // update value
     max_speed = naos_get_d("max-speed");
-
-    // set constrained value
-    naos_set_d("max-speed", max_speed);
 
     // set setting
     l6470_set_maximum_speed(l6470_calculate_maximum_speed(max_speed));
@@ -115,11 +109,8 @@ static void update(naos_param_t *param) {
 
   // handle "acceleration"
   if (strcmp(param->name, "acceleration") == 0) {
-    // constrain value
+    // update value
     acceleration = naos_get_d("acceleration");
-
-    // set constrained value
-    naos_set_d("acceleration", acceleration);
 
     // set setting
     l6470_set_acceleration(l6470_calculate_acceleration(acceleration));
@@ -127,11 +118,8 @@ static void update(naos_param_t *param) {
 
   // handle "deceleration"
   if (strcmp(param->name, "deceleration") == 0) {
-    // constrain value
+    // update value
     deceleration = naos_get_d("deceleration");
-
-    // set constrained value
-    naos_set_d("deceleration", deceleration);
 
     // set setting
     l6470_set_deceleration(l6470_calculate_deceleration(deceleration));
