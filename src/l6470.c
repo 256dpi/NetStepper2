@@ -1,5 +1,6 @@
 #include <driver/gpio.h>
 #include <driver/spi_master.h>
+#include <naos.h>
 #include <naos/sys.h>
 
 #include "l6470.h"
@@ -35,9 +36,13 @@
 #define L6470_CS 25
 #define L6470_RESET GPIO_NUM_16
 
+naos_mutex_t l6470_mutex;
 spi_device_handle_t l6470_spi;
 
 void l6470_init() {
+  // create mutex
+  l6470_mutex = naos_mutex();
+
   // prepare bus config
   spi_bus_config_t bus_config = {
       .miso_io_num = 19, .mosi_io_num = 23, .sclk_io_num = 18, .quadwp_io_num = -1, .quadhd_io_num = -1};
@@ -139,28 +144,46 @@ static uint32_t l6470_handle_param(uint8_t param, uint32_t value) {
       return l6470_transfer(0, 16);
     default:
       ESP_ERROR_CHECK(ESP_FAIL);
+      return 0;
   }
 }
 
 static void l6470_set_param(uint8_t param, uint32_t value) {
+  // acquire lock
+  naos_lock(l6470_mutex);
+
   // send command
   l6470_transmit(param | (uint8_t)L6470_CMD_SET_PARAM);
 
   // set param
   l6470_handle_param(param, value);
+
+  // release lock
+  naos_unlock(l6470_mutex);
 }
 
 static uint32_t l6470_get_param(uint8_t param) {
+  // acquire lock
+  naos_lock(l6470_mutex);
+
   // send command
   l6470_transmit(param | (uint8_t)L6470_CMD_GET_PARAM);
 
   // handle param
-  return l6470_handle_param(param, 0);
+  uint32_t result = l6470_handle_param(param, 0);
+
+  // release lock
+  naos_unlock(l6470_mutex);
+
+  return result;
 }
 
 /* COMMANDS */
 
 void l6470_run(l6470_direction_t dir, uint32_t steps_per_tick) {
+  // acquire lock
+  naos_lock(l6470_mutex);
+
   // send command
   l6470_transmit((uint8_t)(L6470_CMD_RUN | dir));
 
@@ -176,9 +199,15 @@ void l6470_run(l6470_direction_t dir, uint32_t steps_per_tick) {
   l6470_transmit(_steps_per_tick[2]);
   l6470_transmit(_steps_per_tick[1]);
   l6470_transmit(_steps_per_tick[0]);
+
+  // release lock
+  naos_unlock(l6470_mutex);
 }
 
 void l6470_move(l6470_direction_t dir, uint32_t steps) {
+  // acquire lock
+  naos_lock(l6470_mutex);
+
   // send command
   l6470_transmit((uint8_t)(L6470_CMD_MOVE | dir));
 
@@ -194,9 +223,15 @@ void l6470_move(l6470_direction_t dir, uint32_t steps) {
   l6470_transmit(_steps[2]);
   l6470_transmit(_steps[1]);
   l6470_transmit(_steps[0]);
+
+  // release lock
+  naos_unlock(l6470_mutex);
 }
 
 void l6470_go_to(int32_t pos) {
+  // acquire lock
+  naos_lock(l6470_mutex);
+
   // clamp to 22 bits
   if (pos > L6470_I22_MAX) {
     pos = L6470_I22_MAX;
@@ -214,9 +249,15 @@ void l6470_go_to(int32_t pos) {
   l6470_transmit(_pos[2]);
   l6470_transmit(_pos[1]);
   l6470_transmit(_pos[0]);
+
+  // release lock
+  naos_unlock(l6470_mutex);
 }
 
 void l6470_go_to_direction(int32_t pos, l6470_direction_t dir) {
+  // acquire lock
+  naos_lock(l6470_mutex);
+
   // clamp to 22 bits
   if (pos > L6470_I22_MAX) {
     pos = L6470_I22_MAX;
@@ -234,6 +275,9 @@ void l6470_go_to_direction(int32_t pos, l6470_direction_t dir) {
   l6470_transmit(_pos[2]);
   l6470_transmit(_pos[1]);
   l6470_transmit(_pos[0]);
+
+  // release lock
+  naos_unlock(l6470_mutex);
 }
 
 void l6470_go_home() {
@@ -277,6 +321,9 @@ void l6470_hard_hiz() {
 }
 
 l6470_status_t l6470_get_status_and_clear() {
+  // acquire lock
+  naos_lock(l6470_mutex);
+
   // prepare status
   l6470_status_t status;
 
@@ -286,6 +333,9 @@ l6470_status_t l6470_get_status_and_clear() {
   // read status
   status.second = l6470_transmit(0);
   status.first = l6470_transmit(0);
+
+  // release lock
+  naos_unlock(l6470_mutex);
 
   return status;
 }
