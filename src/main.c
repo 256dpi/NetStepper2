@@ -15,7 +15,6 @@
 #include "end_stop.h"
 #include "l6470.h"
 #include "led.h"
-#include "sharp.h"
 
 static naos_status_t current_status = NAOS_DISCONNECTED;
 
@@ -29,7 +28,6 @@ double min_target = 0;
 double max_target = 0;
 bool use_sensor_1 = false;
 bool use_sensor_2 = false;
-bool convert_sharp = false;
 
 a32_smooth_t *sensor_smooth_1;
 a32_smooth_t *sensor_smooth_2;
@@ -206,11 +204,6 @@ static void loop() {
     // read sensor
     double es1 = end_stop_read_1();
 
-    // convert value if requested
-    if (convert_sharp) {
-      es1 = sharp_convert(es1);
-    }
-
     // smooth value
     es1 = a32_smooth_update(sensor_smooth_1, es1);
 
@@ -231,11 +224,6 @@ static void loop() {
 
     // read sensors
     double es2 = end_stop_read_2();
-
-    // convert value if requested
-    if (convert_sharp) {
-      es2 = sharp_convert(es2);
-    }
 
     // smooth value
     es2 = a32_smooth_update(sensor_smooth_2, es2);
@@ -351,7 +339,6 @@ static naos_param_t params[] = {
     {.name = "max-target", .type = NAOS_DOUBLE, .default_d = 5, .sync_d = &max_target},
     {.name = "use-sensor-1", .type = NAOS_BOOL, .default_b = false, .sync_b = &use_sensor_1},
     {.name = "use-sensor-2", .type = NAOS_BOOL, .default_b = false, .sync_b = &use_sensor_2},
-    {.name = "convert-sharp", .type = NAOS_BOOL, .default_b = false, .sync_b = &convert_sharp},
 };
 
 static naos_config_t config = {
