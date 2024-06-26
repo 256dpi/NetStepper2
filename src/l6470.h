@@ -2,7 +2,10 @@
 
 /* DATA STRUCTURES */
 
-typedef enum { L6470_FORWARD = 0x01, L6470_REVERSE = 0x00 } l6470_direction_t;
+typedef enum {
+  L6470_FORWARD = 0x01,
+  L6470_REVERSE = 0x00,
+} l6470_direction_t;
 
 typedef union {
   uint16_t data;
@@ -30,7 +33,7 @@ typedef enum {
   L6470_STEP_MODE_16 = 0x04,
   L6470_STEP_MODE_32 = 0x05,
   L6470_STEP_MODE_64 = 0x06,
-  L6470_STEP_MODE_128 = 0x07
+  L6470_STEP_MODE_128 = 0x07,
 } l6470_step_mode_t;
 
 #define L6470_I22_MIN -2097152

@@ -1,14 +1,12 @@
-#include <art32/numbers.h>
-#include <art32/smooth.h>
-#include <art32/convert.h>
-#include <driver/adc.h>
-#include <driver/gpio.h>
 #include <naos.h>
 #include <naos/ble.h>
 #include <naos/wifi.h>
 #include <naos/mqtt.h>
+#include <naos/manager.h>
 #include <naos/sys.h>
-#include <string.h>
+#include <art32/numbers.h>
+#include <art32/smooth.h>
+#include <driver/gpio.h>
 
 #include "buttons.h"
 #include "encoder.h"
@@ -32,8 +30,6 @@ bool use_sensor_2 = false;
 a32_smooth_t *sensor_smooth_1;
 a32_smooth_t *sensor_smooth_2;
 
-bool blocked = true;
-
 static void set_status() {
   // set led accordingly
   switch (current_status) {
@@ -44,11 +40,7 @@ static void set_status() {
       led_set(0, 0, 1024);
       break;
     case NAOS_NETWORKED:
-      if (blocked) {
-        led_set(1024, 1024, 0);
-      } else {
-        led_set(0, 1024, 0);
-      }
+      led_set(0, 1024, 0);
       break;
   }
 }
@@ -70,124 +62,78 @@ static void ping() {
   set_status();
 }
 
-static void online() {
-  // subscribe to topics
-  naos_subscribe("forward", 0, NAOS_LOCAL);
-  naos_subscribe("backward", 0, NAOS_LOCAL);
-  naos_subscribe("target", 0, NAOS_LOCAL);
-  naos_subscribe("stop", 0, NAOS_LOCAL);
-  naos_subscribe("reset", 0, NAOS_LOCAL);
-  naos_subscribe("home", 0, NAOS_LOCAL);
+static void set_micro_steps(int32_t n) {
+  // make motor stop (remove power)
+  l6470_hard_hiz();
+
+  // set micro steps
+  l6470_set_step_mode_int(n);
+
+  // reset position
+  l6470_reset_position();
 }
 
-static void update(naos_param_t *param) {
-  // handle "micro-steps"
-  if (strcmp(param->name, "micro-steps") == 0) {
-    // make motor stop (remove power)
-    l6470_hard_hiz();
+static void set_max_speed(double n) {
+  // set setting
+  l6470_set_maximum_speed(l6470_calculate_maximum_speed(n));
 
-    // update value
-    micro_steps = l6470_set_step_mode_int(naos_get_l("micro-steps"));
-
-    // reset position
-    l6470_reset_position();
-  }
-
-  // handle "max-speed"
-  if (strcmp(param->name, "max-speed") == 0) {
-    // update value
-    max_speed = naos_get_d("max-speed");
-
-    // set setting
-    l6470_set_maximum_speed(l6470_calculate_maximum_speed(max_speed));
-
-    // set full step mode to two times max speed (no full stepping)
-    l6470_set_full_step_speed(l6470_calculate_full_step_speed(max_speed * 2));
-  }
-
-  // handle "acceleration"
-  if (strcmp(param->name, "acceleration") == 0) {
-    // update value
-    acceleration = naos_get_d("acceleration");
-
-    // set setting
-    l6470_set_acceleration(l6470_calculate_acceleration(acceleration));
-  }
-
-  // handle "deceleration"
-  if (strcmp(param->name, "deceleration") == 0) {
-    // update value
-    deceleration = naos_get_d("deceleration");
-
-    // set setting
-    l6470_set_deceleration(l6470_calculate_deceleration(deceleration));
-  }
+  // set full step mode to two times max speed (no full stepping)
+  l6470_set_full_step_speed(l6470_calculate_full_step_speed(n * 2));
 }
 
-static void message(const char *topic, const uint8_t *payload, size_t len, naos_scope_t scope) {
-  // immediately return if blocked
-  if (blocked) {
-    return;
-  }
+static void set_acceleration(double n) {
+  // set setting
+  l6470_set_acceleration(l6470_calculate_acceleration(n));
+}
 
-  // make string
-  char *str = (char *)payload;
+static void set_deceleration(double n) {
+  // set setting
+  l6470_set_deceleration(l6470_calculate_deceleration(n));
+}
 
-  // handle "forward" command
-  if (strcmp(topic, "forward") == 0 && scope == NAOS_LOCAL) {
-    // run forward
-    l6470_run(L6470_FORWARD, l6470_calculate_speed(max_speed));
-  }
+static void forward() {
+  // run forward
+  l6470_run(L6470_FORWARD, l6470_calculate_speed(max_speed));
+}
 
-  // handle "backward command
-  if (strcmp(topic, "backward") == 0 && scope == NAOS_LOCAL) {
-    // run backward
-    l6470_run(L6470_REVERSE, l6470_calculate_speed(max_speed));
-  }
+static void backward() {
+  // run backward
+  l6470_run(L6470_REVERSE, l6470_calculate_speed(max_speed));
+}
 
-  // handle "target" command
-  if (strcmp(topic, "target") == 0 && scope == NAOS_LOCAL) {
-    // calculate position factor
-    double steps_per_rev = micro_steps * resolution * gear_ratio;
+static void approach(double target) {
+  // calculate position factor
+  double steps_per_rev = micro_steps * resolution * gear_ratio;
 
-    // calculate minimum and maximum physical position
-    double min_phys_target = L6470_I22_MIN / steps_per_rev;
-    double max_phys_target = L6470_I22_MAX / steps_per_rev;
+  // calculate minimum and maximum physical position
+  double min_phys_target = L6470_I22_MIN / steps_per_rev;
+  double max_phys_target = L6470_I22_MAX / steps_per_rev;
 
-    // get target
-    double target = a32_str2d(str);
+  // constrain target
+  target = a32_constrain_d(target, min_phys_target, max_phys_target);
+  target = a32_constrain_d(target, min_target, max_target);
 
-    // constrain target
-    target = a32_constrain_d(target, min_phys_target, max_phys_target);
-    target = a32_constrain_d(target, min_target, max_target);
+  // calculate real position
+  int32_t pos = (int32_t)(target * steps_per_rev);
 
-    // calculate real position
-    int32_t pos = (int32_t)(target * steps_per_rev);
+  // constrain position
+  pos = (int32_t)a32_constrain_l(pos, L6470_I22_MIN, L6470_I22_MAX);
 
-    // constrain position
-    pos = a32_constrain_l(pos, L6470_I22_MIN, L6470_I22_MAX);
+  // approach target
+  l6470_approach_target(pos);
+}
 
-    // approach target
-    l6470_approach_target(pos);
-  }
+static void stop() {
+  // stop motor
+  l6470_soft_stop();
+}
 
-  // handle "stop" command
-  if (strcmp(topic, "stop") == 0 && scope == NAOS_LOCAL) {
-    // stop motor
-    l6470_soft_stop();
-  }
+static void reset() {
+  // stop motor
+  l6470_hard_stop();
 
-  // handle "reset" command
-  if (strcmp(topic, "reset") == 0 && scope == NAOS_LOCAL) {
-    // reset position
-    l6470_reset_position();
-  }
-
-  // handle "home" command
-  if (strcmp(topic, "home") == 0 && scope == NAOS_LOCAL) {
-    // approach home
-    l6470_approach_home();
-  }
+  // set home pos
+  l6470_reset_position();
 }
 
 static void loop() {
@@ -242,48 +188,20 @@ static void loop() {
 static void press(buttons_type_t type, bool pressed) {
   // prepare home press counter
   static uint32_t home_press = 0;
-  static uint32_t stop_press = 0;
 
   // turn forward if cw is released
   if (type == BUTTONS_TYPE_CW && !pressed) {
-    // run forward
-    l6470_run(L6470_FORWARD, l6470_calculate_speed(max_speed));
+    forward();
   }
 
   // turn backwards if ccw is released
   if (type == BUTTONS_TYPE_CCW && !pressed) {
-    // run backward
-    l6470_run(L6470_REVERSE, l6470_calculate_speed(max_speed));
+    backward();
   }
 
-  // stop motor and block if stop is pressed
+  // stop motor stop is pressed
   if (type == BUTTONS_TYPE_STOP && pressed) {
-    // stop motor
-    l6470_soft_stop();
-
-    // set stop flag
-    blocked = true;
-    set_status();
-
-    // save time
-    stop_press = naos_millis();
-  }
-
-  // handle stop button release
-  if (type == BUTTONS_TYPE_STOP && !pressed) {
-    // get time difference
-    uint32_t diff = naos_millis() - stop_press;
-
-    // reset blocked flag if button has been released quickly
-    if (diff < 500) {
-      // set flag
-      blocked = false;
-      set_status();
-
-      return;
-    }
-
-    // otherwise keep blocked flag set
+    stop();
   }
 
   // set time if pressed
@@ -298,21 +216,14 @@ static void press(buttons_type_t type, bool pressed) {
 
     // approach home if buttons has been released quickly
     if (diff < 500) {
-      // approach home
-      l6470_approach_home();
-
+      approach(0);
       return;
     }
 
-    // otherwise reset position and stop
+    // otherwise reset position
+    reset();
 
-    // set home pos
-    l6470_reset_position();
-
-    // stop motor
-    l6470_soft_stop();
-
-    // flash led
+    // flash LED
     led_set(255, 255, 255);
     naos_delay(300);
     set_status();
@@ -328,29 +239,62 @@ static void offline() {
   l6470_soft_stop();
 }
 
+static void monitor() {
+  // get position
+  int32_t raw_pos = l6470_get_absolute_position();
+  double pos = (double)raw_pos / (micro_steps * resolution * gear_ratio);
+
+  // get speed
+  double raw_speed = l6470_get_speed();
+  double speed = raw_speed / (micro_steps * resolution * gear_ratio);
+
+  // set parameters
+  naos_set_d("position", pos);
+  naos_set_d("speed", speed);
+  naos_set_b("running", speed != 0);
+
+  // publish messages
+  naos_publish_d("position", pos, 0, false, NAOS_LOCAL);
+  naos_publish_d("speed", speed, 0, false, NAOS_LOCAL);
+  naos_publish_b("running", speed != 0, 0, false, NAOS_LOCAL);
+}
+
 static naos_param_t params[] = {
-    {.name = "micro-steps", .type = NAOS_LONG, .default_l = 128},
+    {.name = "micro-steps", .type = NAOS_LONG, .default_l = 128, .sync_l = &micro_steps, .func_l = set_micro_steps},
     {.name = "gear-ratio", .type = NAOS_DOUBLE, .default_d = 5.18, .sync_d = &gear_ratio},
     {.name = "resolution", .type = NAOS_LONG, .default_l = 200, .sync_l = &resolution},
-    {.name = "max-speed", .type = NAOS_DOUBLE, .default_d = 900},
-    {.name = "acceleration", .type = NAOS_DOUBLE, .default_d = 900},
-    {.name = "deceleration", .type = NAOS_DOUBLE, .default_d = 900},
+    {.name = "max-speed", .type = NAOS_DOUBLE, .default_d = 900, .sync_d = &max_speed, .func_d = set_max_speed},
+    {.name = "acceleration",
+     .type = NAOS_DOUBLE,
+     .default_d = 900,
+     .sync_d = &acceleration,
+     .func_d = set_acceleration},
+    {.name = "deceleration",
+     .type = NAOS_DOUBLE,
+     .default_d = 900,
+     .sync_d = &deceleration,
+     .func_d = set_deceleration},
     {.name = "min-target", .type = NAOS_DOUBLE, .default_d = -5, .sync_d = &min_target},
     {.name = "max-target", .type = NAOS_DOUBLE, .default_d = 5, .sync_d = &max_target},
     {.name = "use-sensor-1", .type = NAOS_BOOL, .default_b = false, .sync_b = &use_sensor_1},
     {.name = "use-sensor-2", .type = NAOS_BOOL, .default_b = false, .sync_b = &use_sensor_2},
+    {.name = "forward", .type = NAOS_ACTION, .func_a = forward},
+    {.name = "backward", .type = NAOS_ACTION, .func_a = backward},
+    {.name = "approach", .type = NAOS_DOUBLE, .func_d = approach, .mode = NAOS_VOLATILE},
+    {.name = "stop", .type = NAOS_ACTION, .func_a = stop},
+    {.name = "reset", .type = NAOS_ACTION, .func_a = reset},
+    {.name = "position", .type = NAOS_DOUBLE, .mode = NAOS_VOLATILE},
+    {.name = "speed", .type = NAOS_DOUBLE, .mode = NAOS_VOLATILE},
+    {.name = "running", .type = NAOS_BOOL, .mode = NAOS_VOLATILE},
 };
 
 static naos_config_t config = {
     .device_type = "NetStepper2",
-    .device_version = "0.5.0",
+    .device_version = "0.6.0",
     .parameters = params,
     .num_parameters = sizeof(params) / sizeof(naos_param_t),
     .ping_callback = ping,
     .status_callback = status,
-    .online_callback = online,
-    .update_callback = update,
-    .message_callback = message,
     .loop_callback = loop,
     .loop_interval = 10,
     .offline_callback = offline,
@@ -360,51 +304,33 @@ void app_main() {
   // install gpio interrupt service
   gpio_install_isr_service(0);
 
-  // set adc capture width
-  adc1_config_width(ADC_WIDTH_10Bit);
-
-  // initialize led
+  // initialize HMI
   led_init();
-
-  // initialize buttons
   buttons_init(press);
-
-  // initialize encoder
   encoder_init(position);
 
-  // initialize l6470
+  // initialize controller
   l6470_init();
 
   // initialize sensors
   sensor_smooth_1 = a32_smooth_new(16);
   sensor_smooth_2 = a32_smooth_new(16);
-
-  // initialize end stops
   end_stop_init(end_stop, true);
+
+  // set initial status
+  set_status();
 
   // initialize naos
   naos_init(&config);
   naos_ble_init((naos_ble_config_t){});
   naos_wifi_init();
   naos_mqtt_init(1);
+  naos_manager_init();
   naos_start();
 
-  // set step mode
-  micro_steps = l6470_set_step_mode_int(naos_get_l("micro-steps"));
-
-  // get speeds
-  max_speed = naos_get_d("max-speed");
-  acceleration = naos_get_d("acceleration");
-  deceleration = naos_get_d("deceleration");
-
-  // reset minimum speed
+  // set minimum speed
   l6470_set_minimum_speed(l6470_calculate_minimum_speed(0));
 
-  // set initial speeds
-  l6470_set_maximum_speed(l6470_calculate_maximum_speed(max_speed));
-  l6470_set_acceleration(l6470_calculate_acceleration(acceleration));
-  l6470_set_deceleration(l6470_calculate_deceleration(deceleration));
-
-  // set full step mode to two times max speed (no full stepping)
-  l6470_set_full_step_speed(l6470_calculate_full_step_speed(max_speed * 2));
+  // run monitor
+  naos_repeat("monitor", 100, monitor);
 }

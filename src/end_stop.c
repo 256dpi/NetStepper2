@@ -70,6 +70,9 @@ void end_stop_task(void* _) {
 }
 
 void end_stop_init(end_stop_handler_t handler, bool analog) {
+  // set ADC capture width
+  adc1_config_width(ADC_WIDTH_10Bit);
+
   // set flag
   end_stop_analog = analog;
 
